@@ -10,7 +10,7 @@ import (
 )
 
 type Child struct {
-	Path     []int   `json:"path,omitempty"`
+	Path     []byte  `json:"path,omitempty"`
 	X        *int    `json:"x,omitempty"`
 	Y        *int    `json:"y,omitempty"`
 	Val      *int    `json:"val,omitempty"`
@@ -27,10 +27,70 @@ type NanocubeResponse struct {
 	Root   Root     `json:"root"`
 }
 
-// merge merges the two interfaces (supposedly json objects) passed in according
-// to the API.md file in https://github.com/laurolins/nanocube.
+// TODO(asubiotto): The whole error handling has to be looked at more closely.
+
+// mergeChildren merges the children array by aggregating "val"s at the base
+// level and using either path as key or x and y as keys.
+func mergeChildren(dest, src []Child) {
+	if dest == nil || src == nil {
+		if dest == nil {
+			dest = src
+		}
+		return
+	}
+
+	destMap := make(map[string]int)
+	for _, child := range dest {
+		// If there's a path there's a value.
+		if child.Val == nil {
+			log.Fatal("Child value was nil in dest")
+		}
+		destMap[string(child.Path)] = *(child.Val)
+	}
+
+	for _, child := range src {
+		if child.Val == nil {
+			log.Fatal("Child value was nil in src")
+		}
+
+		if _, e := destMap[string(child.Path)]; e {
+			// If it exists, we add the value that src has for this key.
+			destMap[string(child.Path)] += *(child.Val)
+		} else {
+			// Otherwise we add it.
+			destMap[string(child.Path)] = *(child.Val)
+		}
+	}
+
+	// Now that we have the results in destMap, we are going to update dest's
+	// children slice.
+	for _, child := range dest {
+		key := string(child.Path)
+		*(child.Val) = destMap[key]
+		delete(destMap, key)
+	}
+
+	if len(destMap) == 0 {
+		return
+	}
+
+	// The keys that are left after this are paths that were not in dest to
+	// begin with.
+	newDest := make([]Child, len(dest)+len(destMap))
+	copy(newDest, dest)
+	i := len(dest)
+	for k, v := range destMap {
+		newDest[i] = Child{Path: []byte(k), Val: &v}
+		i++
+	}
+	dest = newDest
+}
+
+// merge merges src into dest according to the API.md document found in
+// github.com/laurolins/nanocube.
 func merge(dest, src *NanocubeResponse) {
-	// Little check for layers.
+	// Little check for layers. TODO(asubiotto): Think about this case a bit
+	// more when we have empty responses or we want to return an error.
 	if dest.Layers == nil {
 		dest.Layers = []string{}
 	}
@@ -39,10 +99,13 @@ func merge(dest, src *NanocubeResponse) {
 		*(dest.Root.Val) += *(src.Root.Val)
 		return
 	}
+
+	mergeChildren(dest.Root.Children, src.Root.Children)
 }
 
 func unmarshalNanocubeResponse(b []byte, dest *NanocubeResponse) {
-	// TODO(asubiotto): Handle error.
+	// TODO(asubiotto): Handle error. Do we really need this to be a separate
+	// function?
 	err := json.Unmarshal(b, dest)
 	if err != nil {
 		log.Fatal(err)
@@ -75,7 +138,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Read the response and unmarshal into an unknown interface object.
+			// Read the response and unmarshal into a NanocubeResponse object.
 			defer rawResponse.Body.Close()
 			content, _ := ioutil.ReadAll(rawResponse.Body)
 
@@ -91,6 +154,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				response = partitionResponse
 				return
 			}
+
+			// TODO(asubiotto): We can use a more intelligent merging strategy
+			// when we have a lot of nodes (in a tree-like fashion).
 
 			// Otherwise we merge with what we have already.
 			merge(response, partitionResponse)
