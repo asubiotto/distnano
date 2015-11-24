@@ -3,3 +3,4 @@ The aim of this project is to provide a golang wrapper for [nanocube](https://gi
 The advantages of this project are:
 * The process of building the nanocube can be parallelized over n nodes, massively reducing the nanocube build time.
 * The API stays the same for client applications since our golang server takes care of querying and merging the results from n nodes.
+* A nanocube that couldn't fit into the memory of one machine can now be distributed over commodity machines with no requirement for extra memory or headaches.
