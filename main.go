@@ -9,19 +9,50 @@ import (
 	"sync"
 )
 
+type Child struct {
+	Path     []int   `json:"path,omitempty"`
+	X        *int    `json:"x,omitempty"`
+	Y        *int    `json:"y,omitempty"`
+	Val      *int    `json:"val,omitempty"`
+	Children []Child `json:"children,omitempty`
+}
+
+type Root struct {
+	Val      *int    `json:"val,omitempty"`
+	Children []Child `json:"children,omitempty"`
+}
+
+type NanocubeResponse struct {
+	Layers []string `json:"layers"`
+	Root   Root     `json:"root"`
+}
+
 // merge merges the two interfaces (supposedly json objects) passed in according
 // to the API.md file in https://github.com/laurolins/nanocube.
-func merge(dest, src interface{}) {
+func merge(dest, src *NanocubeResponse) {
+	// Little check for layers.
+	if dest.Layers == nil {
+		dest.Layers = []string{}
+	}
 
-	for k, v := range a {
+	if dest.Root.Val != nil {
+		*(dest.Root.Val) += *(src.Root.Val)
+		return
+	}
+}
 
+func unmarshalNanocubeResponse(b []byte, dest *NanocubeResponse) {
+	// TODO(asubiotto): Handle error.
+	err := json.Unmarshal(b, dest)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
 // TODO(asubiotto): Validate the request.
 func handler(w http.ResponseWriter, r *http.Request) {
 	// Our actual response to the request.
-	var response interface{}
+	var response *NanocubeResponse
 
 	// Mutex to protect concurrent modification of response and WaitGroup to
 	// wait for all responses.
@@ -33,20 +64,23 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	for i := 1; i <= 5; i++ {
 		go func(counter int) {
 			defer wg.Done()
+
+			// TODO(asubiotto): Was getting an annoying EOF error. Put the check
+			// back in for an error.
 			rawResponse, err := http.Get(
 				fmt.Sprintf("http://localhost:900%v%v", counter, r.URL.Path),
 			)
+
 			if err != nil {
-				log.Fatal(err)
+				return
 			}
 
 			// Read the response and unmarshal into an unknown interface object.
 			defer rawResponse.Body.Close()
 			content, _ := ioutil.ReadAll(rawResponse.Body)
 
-			var jsonResponse interface{}
-			// TODO(asubiotto): Handle error.
-			json.Unmarshal(content, &jsonResponse)
+			partitionResponse := new(NanocubeResponse)
+			unmarshalNanocubeResponse(content, partitionResponse)
 
 			// Update our global response.
 			mtx.Lock()
@@ -54,13 +88,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			if response == nil {
 				// First one to respond, we just set the global response to be
 				// our response.
-				response = jsonResponse
+				response = partitionResponse
 				return
 			}
 
 			// Otherwise we merge with what we have already.
-			response = merge(&response, jsonResponse)
-			mtx.Unlock()
+			merge(response, partitionResponse)
 		}(i)
 	}
 
