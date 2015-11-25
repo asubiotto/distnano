@@ -47,12 +47,12 @@ func stringAsPath(s string) Path {
 
 // mergeChildren merges the children array by aggregating "val"s at the base
 // level and using either path as key or x and y as keys.
-func mergeChildren(dest, src []Child) {
+func mergeChildren(dest, src []Child) []Child {
 	if dest == nil || src == nil {
 		if dest == nil {
-			dest = src
+			return src
 		}
-		return
+		return dest
 	}
 
 	destMap := make(map[string]int)
@@ -88,7 +88,7 @@ func mergeChildren(dest, src []Child) {
 	}
 
 	if len(destMap) == 0 {
-		return
+		return dest
 	}
 
 	// The keys that are left after this are paths that were not in dest to
@@ -97,10 +97,12 @@ func mergeChildren(dest, src []Child) {
 	copy(newDest, dest)
 	i := len(dest)
 	for k, v := range destMap {
-		newDest[i] = Child{Path: stringAsPath(k), Val: &v}
+		val := new(int)
+		*val = v
+		newDest[i] = Child{Path: stringAsPath(k), Val: val}
 		i++
 	}
-	dest = newDest
+	return newDest
 }
 
 // merge merges src into dest according to the API.md document found in
@@ -117,5 +119,10 @@ func merge(dest, src *NanocubeResponse) {
 		return
 	}
 
-	mergeChildren(dest.Root.Children, src.Root.Children)
+	b, _ := json.Marshal(dest)
+	b1, _ := json.Marshal(src)
+	fmt.Printf("Merging children %v and %v\n\n", string(b), string(b1))
+	dest.Root.Children = mergeChildren(dest.Root.Children, src.Root.Children)
+	b, _ = json.Marshal(dest)
+	fmt.Printf("Got: %v\n\n\n\n", string(b))
 }
