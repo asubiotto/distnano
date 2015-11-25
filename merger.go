@@ -77,12 +77,12 @@ func mergeChildren(dest, src []Child) []Child {
 	}
 
 	// We now want to create a new []Child slice from our [string]*Child map.
-	result := make([]Child, len(destMap))
-	i := 0
+	result := make([]Child, 0, len(destMap))
 
 	for _, v := range destMap {
-		result[i] = *v
-		i++
+		// Note that result is not reallocated on each iteration because its
+		// capacity was specified.
+		result = append(result, *v)
 	}
 
 	return result
