@@ -26,21 +26,30 @@ type NanocubeResponse struct {
 	Root   Root     `json:"root"`
 }
 
-func (p *Path) asKey() string {
-	b, err := json.Marshal(&p)
+// asKey is a function that encodes c's path or x and y values as a string to
+// be used as a key in a map. This is necessary to produce quick aggregations
+// on keys.
+func (c Child) asKey() string {
+	// Want to ignore val.
+	c.Val = nil
+	b, err := json.Marshal(c)
 	if err != nil {
-		panic(fmt.Sprintf("Got %v encoding path %v", err, p))
+		log.Fatalf("Got %v encoding child %v", err, c)
 	}
 	return string(b)
 }
 
-func stringAsPath(s string) Path {
-	p := Path{}
+// stringAsChild decodes the string into a Child by unmarshaling the string and
+// returning as a result either a Child with its Path set or its X and Y set.
+// This is useful to us once we have finished aggregating using the map and
+// want to convert the map back to a []Child.
+func stringAsChild(s string) Child {
+	c := Child{}
 	b := []byte(s)
-	if err := json.Unmarshal(b, &p); err != nil {
-		panic(fmt.Sprintf("Got %v decoding %v", err, b))
+	if err := json.Unmarshal(b, &c); err != nil {
+		log.Fatalf("Got %v decoding %v", err, b)
 	}
-	return p
+	return c
 }
 
 // TODO(asubiotto): The whole error handling has to be looked at more closely.
@@ -61,7 +70,7 @@ func mergeChildren(dest, src []Child) []Child {
 		if child.Val == nil {
 			log.Fatal("Child value was nil in dest")
 		}
-		destMap[child.Path.asKey()] = *(child.Val)
+		destMap[child.asKey()] = *(child.Val)
 	}
 
 	for _, child := range src {
@@ -69,7 +78,7 @@ func mergeChildren(dest, src []Child) []Child {
 			log.Fatal("Child value was nil in src")
 		}
 
-		key := child.Path.asKey()
+		key := child.asKey()
 		if _, e := destMap[key]; e {
 			// If it exists, we add the value that src has for this key.
 			destMap[key] += *(child.Val)
@@ -82,7 +91,7 @@ func mergeChildren(dest, src []Child) []Child {
 	// Now that we have the results in destMap, we are going to update dest's
 	// children slice.
 	for _, child := range dest {
-		key := child.Path.asKey()
+		key := child.asKey()
 		*(child.Val) = destMap[key]
 		delete(destMap, key)
 	}
@@ -99,7 +108,8 @@ func mergeChildren(dest, src []Child) []Child {
 	for k, v := range destMap {
 		val := new(int)
 		*val = v
-		newDest[i] = Child{Path: stringAsPath(k), Val: val}
+		newDest[i] = stringAsChild(k)
+		newDest[i].Val = val
 		i++
 	}
 	return newDest

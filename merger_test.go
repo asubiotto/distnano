@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-var countNoConstraints = []struct {
+var countNormal = []struct {
 	dest, src, expected []byte
 }{
 	{
@@ -16,10 +16,11 @@ var countNoConstraints = []struct {
 	},
 }
 
-var countSplitOnSpace = []struct {
+var countWithPath = []struct {
 	dest, src, expected []byte
 }{
 	{
+		// First triplet tests when src is bigger than dest.
 		[]byte(`{"layers":["multi-target:time"],"root":{"children":[{"path":[0],"val":293}]}}`),
 		[]byte(`{"layers":["multi-target:time"],"root":{"children":[{"path":[0],"val":664},{"path":[1],"val":595},{"path":[2],"val":602},{"path":[3],"val":582},{"path":[4],"val":583},{"path":[5],"val":593},{"path":[6],"val":55}]}}`),
 		[]byte(`{"layers":["multi-target:time"],"root":{"children":[{"path":[0],"val":957},{"path":[1],"val":595},{"path":[2],"val":602},{"path":[3],"val":582},{"path":[4],"val":583},{"path":[5],"val":593},{"path":[6],"val":55}]}}`),
@@ -43,8 +44,8 @@ func mustUnmarshalSlice(t *testing.T, b []byte) *NanocubeResponse {
 	return ncr
 }
 
-func TestCountNoConstraints(t *testing.T) {
-	for _, e := range countNoConstraints {
+func TestCountNormal(t *testing.T) {
+	for _, e := range countNormal {
 		dest := mustUnmarshalSlice(t, e.dest)
 		merge(dest, mustUnmarshalSlice(t, e.src))
 		ans := mustMarshalNanocubeResponse(t, dest)
@@ -54,8 +55,8 @@ func TestCountNoConstraints(t *testing.T) {
 	}
 }
 
-func TestCountSplitOnSpace(t *testing.T) {
-	for _, e := range countSplitOnSpace {
+func TestCountWithPath(t *testing.T) {
+	for _, e := range countWithPath {
 		dest := mustUnmarshalSlice(t, e.dest)
 		merge(dest, mustUnmarshalSlice(t, e.src))
 		ans := mustMarshalNanocubeResponse(t, dest)
