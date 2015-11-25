@@ -6,10 +6,8 @@ import (
 	"log"
 )
 
-type Path []uint
-
 type Child struct {
-	Path     Path    `json:"path,omitempty"`
+	Path     []uint  `json:"path,omitempty"`
 	X        *int    `json:"x,omitempty"`
 	Y        *int    `json:"y,omitempty"`
 	Val      *int    `json:"val,omitempty"`
@@ -64,55 +62,43 @@ func mergeChildren(dest, src []Child) []Child {
 		return dest
 	}
 
-	destMap := make(map[string]int)
-	for _, child := range dest {
-		// If there's a path there's a value.
-		if child.Val == nil {
-			log.Fatal("Child value was nil in dest")
-		}
-		destMap[child.asKey()] = *(child.Val)
+	// Store pointers to children accesible by key.
+	destMap := make(map[string]*Child)
+	for i, child := range dest {
+		destMap[child.asKey()] = &dest[i]
 	}
 
-	for _, child := range src {
-		if child.Val == nil {
-			log.Fatal("Child value was nil in src")
-		}
-
+	// For each child in src, merge with the destMap.
+	for i, child := range src {
 		key := child.asKey()
+
+		// If the key already exists in the map, we want to merge with that
+		// key. Otherwise, we simply add it.
 		if _, e := destMap[key]; e {
-			// If it exists, we add the value that src has for this key.
-			destMap[key] += *(child.Val)
+			// If the child doesn't have a Val, it necessarily has something in
+			// its []Child field. We therefore initiate a recursive merge.
+			// Otherwise, the semantics of merging is to add to the value.
+			if child.Val == nil {
+				destMap[key].Children =
+					mergeChildren(destMap[key].Children, child.Children)
+			} else {
+				*(destMap[key].Val) += *(child.Val)
+			}
 		} else {
-			// Otherwise we add it.
-			destMap[key] = *(child.Val)
+			destMap[key] = &src[i]
 		}
 	}
 
-	// Now that we have the results in destMap, we are going to update dest's
-	// children slice.
-	for _, child := range dest {
-		key := child.asKey()
-		*(child.Val) = destMap[key]
-		delete(destMap, key)
-	}
+	// We now want to create a new []Child slice from our [string]*Child map.
+	result := make([]Child, len(destMap))
+	i := 0
 
-	if len(destMap) == 0 {
-		return dest
-	}
-
-	// The keys that are left after this are paths that were not in dest to
-	// begin with.
-	newDest := make([]Child, len(dest)+len(destMap))
-	copy(newDest, dest)
-	i := len(dest)
-	for k, v := range destMap {
-		val := new(int)
-		*val = v
-		newDest[i] = stringAsChild(k)
-		newDest[i].Val = val
+	for _, v := range destMap {
+		result[i] = *v
 		i++
 	}
-	return newDest
+
+	return result
 }
 
 // merge merges src into dest according to the API.md document found in
