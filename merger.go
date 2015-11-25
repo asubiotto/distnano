@@ -37,19 +37,6 @@ func (c Child) asKey() string {
 	return string(b)
 }
 
-// stringAsChild decodes the string into a Child by unmarshaling the string and
-// returning as a result either a Child with its Path set or its X and Y set.
-// This is useful to us once we have finished aggregating using the map and
-// want to convert the map back to a []Child.
-func stringAsChild(s string) Child {
-	c := Child{}
-	b := []byte(s)
-	if err := json.Unmarshal(b, &c); err != nil {
-		log.Fatalf("Got %v decoding %v", err, b)
-	}
-	return c
-}
-
 // TODO(asubiotto): The whole error handling has to be looked at more closely.
 
 // mergeChildren merges the children array by aggregating "val"s at the base
