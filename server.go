@@ -10,6 +10,8 @@ import (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling request for url path: ", r.URL.Path)
+
 	// Our actual response to the request.
 	var response JSONResponse
 

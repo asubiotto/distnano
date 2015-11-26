@@ -3,6 +3,7 @@ package distnano
 import (
 	"encoding/json"
 	"log"
+	"sort"
 )
 
 // asKey is a function that encodes c's path or x and y values as a string to
@@ -93,6 +94,18 @@ func mergeFields(dest, src []Field) []Field {
 		// Merge the valname maps together.
 		for k, v := range src[i].Valnames {
 			dest[i].Valnames[k] += v
+		}
+
+		keys := make(sort.StringSlice, 0, len(dest[i].Valnames))
+		for k, _ := range dest[i].Valnames {
+			keys = append(keys, k)
+		}
+
+		// The semantics of the schema call is to respond with the index of the
+		// key in sorted order as the value.
+		keys.Sort()
+		for j := 0; j < len(keys); j++ {
+			dest[i].Valnames[keys[j]] = j
 		}
 	}
 
