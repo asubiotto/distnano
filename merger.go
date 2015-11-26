@@ -2,7 +2,6 @@ package distnano
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 )
 
@@ -36,8 +35,6 @@ func (c Child) asKey() string {
 	}
 	return string(b)
 }
-
-// TODO(asubiotto): The whole error handling has to be looked at more closely.
 
 // mergeChildren merges the children array by aggregating "val"s at the base
 // level and using either path as key or x and y as keys.
@@ -91,8 +88,6 @@ func mergeChildren(dest, src []Child) []Child {
 // merge merges src into dest according to the API.md document found in
 // github.com/laurolins/nanocube.
 func merge(dest, src *NanocubeResponse) {
-	// Little check for layers. TODO(asubiotto): Think about this case a bit
-	// more when we have empty responses or we want to return an error.
 	if dest.Layers == nil {
 		dest.Layers = []string{}
 	}
@@ -102,10 +97,5 @@ func merge(dest, src *NanocubeResponse) {
 		return
 	}
 
-	b, _ := json.Marshal(dest)
-	b1, _ := json.Marshal(src)
-	fmt.Printf("Merging children %v and %v\n\n", string(b), string(b1))
 	dest.Root.Children = mergeChildren(dest.Root.Children, src.Root.Children)
-	b, _ = json.Marshal(dest)
-	fmt.Printf("Got: %v\n\n\n\n", string(b))
 }
