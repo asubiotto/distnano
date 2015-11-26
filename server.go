@@ -1,46 +1,55 @@
 package distnano
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 )
 
-// TODO(asubiotto): Validate the request.
 func handler(w http.ResponseWriter, r *http.Request) {
 	// Our actual response to the request.
-	var response *NanocubeResponse
+	var response JSONResponse
 
 	// Mutex to protect concurrent modification of response and WaitGroup to
 	// wait for all responses.
 	var mtx = &sync.Mutex{}
 	var wg = &sync.WaitGroup{}
 
+	// Note what kind of request this is.
+	schemaRequest := strings.HasPrefix(r.URL.Path, "/schema")
 	wg.Add(5)
 	// Send off the request to each server that we know exists.
 	for i := 1; i <= 5; i++ {
 		go func(counter int) {
 			defer wg.Done()
 
-			// TODO(asubiotto): Was getting an annoying EOF error. Put the check
-			// back in for an error.
 			rawResponse, err := http.Get(
 				fmt.Sprintf("http://localhost:900%v%v", counter, r.URL.Path),
 			)
 
 			if err != nil {
-				return
+				log.Fatalf(
+					"Cannot continue, error getting %v from node %v\n",
+					r.URL.Path,
+					i,
+				)
 			}
 
 			// Read the response and unmarshal into a NanocubeResponse object.
 			defer rawResponse.Body.Close()
 			content, _ := ioutil.ReadAll(rawResponse.Body)
 
-			partitionResponse := new(NanocubeResponse)
-			err = json.Unmarshal(content, partitionResponse)
+			var partitionResponse JSONResponse
+			if schemaRequest {
+				partitionResponse = new(SchemaResponse)
+			} else {
+				partitionResponse = new(NanocubeResponse)
+			}
+
+			err = partitionResponse.Unmarshal(content)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -59,12 +68,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			// when we have a lot of nodes (in a tree-like fashion).
 
 			// Otherwise we merge with what we have already.
-			merge(response, partitionResponse)
+			response.Merge(partitionResponse)
 		}(i)
 	}
 
 	wg.Wait()
-	b, err := json.Marshal(response)
+	b, err := response.Marshal()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,5 +83,5 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func Run() {
 	http.HandleFunc("/", handler)
-	http.ListenAndServe(":29512", nil)
+	log.Fatal(http.ListenAndServe(":29512", nil))
 }

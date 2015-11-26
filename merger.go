@@ -5,30 +5,14 @@ import (
 	"log"
 )
 
-type Child struct {
-	Path     []uint  `json:"path,omitempty"`
-	X        *int    `json:"x,omitempty"`
-	Y        *int    `json:"y,omitempty"`
-	Val      *int    `json:"val,omitempty"`
-	Children []Child `json:"children,omitempty"`
-}
-
-type Root struct {
-	Val      *int    `json:"val,omitempty"`
-	Children []Child `json:"children,omitempty"`
-}
-
-type NanocubeResponse struct {
-	Layers []string `json:"layers"`
-	Root   Root     `json:"root"`
-}
-
 // asKey is a function that encodes c's path or x and y values as a string to
 // be used as a key in a map. This is necessary to produce quick aggregations
 // on keys.
 func (c Child) asKey() string {
-	// Want to ignore val.
+	// Want to ignore values that are being aggregated over.
 	c.Val = nil
+	c.Children = nil
+
 	b, err := json.Marshal(c)
 	if err != nil {
 		log.Fatalf("Got %v encoding child %v", err, c)
@@ -87,7 +71,7 @@ func mergeChildren(dest, src []Child) []Child {
 
 // merge merges src into dest according to the API.md document found in
 // github.com/laurolins/nanocube.
-func merge(dest, src *NanocubeResponse) {
+func mergeNanocubeResponse(dest, src *NanocubeResponse) {
 	if dest.Layers == nil {
 		dest.Layers = []string{}
 	}
@@ -98,4 +82,31 @@ func merge(dest, src *NanocubeResponse) {
 	}
 
 	dest.Root.Children = mergeChildren(dest.Root.Children, src.Root.Children)
+}
+
+func mergeFields(dest, src []Field) []Field {
+	if len(dest) != len(src) {
+		log.Fatal("Schema fields not the same length")
+	}
+
+	for i := 0; i < len(dest); i++ {
+		// Merge the valname maps together.
+		for k, v := range src[i].Valnames {
+			dest[i].Valnames[k] += v
+		}
+	}
+
+	return dest
+}
+
+func mergeSchemaResponse(dest, src *SchemaResponse) {
+	for _, md := range dest.Metadata {
+		// Every node will have a different filename, so this key value pair is
+		// not necessary.
+		if md.Key == "name" {
+			md.Value = ""
+		}
+	}
+
+	dest.Fields = mergeFields(dest.Fields, src.Fields)
 }

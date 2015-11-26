@@ -1,7 +1,6 @@
 package distnano
 
 import (
-	"encoding/json"
 	"reflect"
 	"sort"
 	"testing"
@@ -11,6 +10,8 @@ import (
 // method.
 type ByKey []Child
 
+// TODO(asubiotto): Specify these as actual response objects, it seems that
+// JSON is an unnecessary layer in this test suite.
 var mergeNormal = []struct {
 	dest, src, expected []byte
 }{
@@ -57,21 +58,14 @@ var mergeRecursiveXY = []struct {
 	},
 }
 
-func mustMarshalNanocubeResponse(t *testing.T, ncr *NanocubeResponse) []byte {
-	b, err := json.Marshal(ncr)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v\n", err)
-	}
-	return b
-}
-
-func mustUnmarshalSlice(t *testing.T, b []byte) *NanocubeResponse {
-	ncr := new(NanocubeResponse)
-	err := json.Unmarshal(b, ncr)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v\n", err)
-	}
-	return ncr
+var mergeSchema = []struct {
+	dest, src, expected []byte
+}{
+	{
+		[]byte(`{ "fields":[ { "name":"location", "type":"nc_dim_quadtree_25", "valnames":{  } }, { "name":"crime", "type":"nc_dim_cat_1", "valnames":{ "CRIM_SEXUAL_ASSAULT":6, "OFFENSE_INVOLVING_CHILDREN":16, "CRIMINAL_TRESPASS":5, "SEX_OFFENSE":21, "INTIMIDATION":11, "KIDNAPPING":12, "PROSTITUTION":18, "PUBLIC_PEACE_VIOLATION":19, "WEAPONS_VIOLATION":24, "ASSAULT":1, "MOTOR_VEHICLE_THEFT":14, "GAMBLING":8, "OTHER_OFFENSE":17, "DECEPTIVE_PRACTICE":7, "NARCOTICS":15, "CRIMINAL_DAMAGE":4, "LIQUOR_LAW_VIOLATION":13, "BATTERY":2, "THEFT":23, "ARSON":0, "STALKING":22 } }, { "name":"time", "type":"nc_dim_time_2", "valnames":{  } }, { "name":"count", "type":"nc_var_uint_4", "valnames":{  } } ], "metadata":[ { "key":"tbin", "value":"2014-01-01_00:00:00_3600s" }, { "key":"location__origin", "value":"degrees_mercator_quadtree25" }, { "key":"name", "value":"xac" } ] }`),
+		[]byte(`{ "fields":[ { "name":"location", "type":"nc_dim_quadtree_25", "valnames":{  } }, { "name":"crime", "type":"nc_dim_cat_1", "valnames":{ "CRIM_SEXUAL_ASSAULT":6, "OFFENSE_INVOLVING_CHILDREN":16, "CRIMINAL_TRESPASS":5, "INTIMIDATION":10, "KIDNAPPING":12, "ROBBERY":20, "HOMICIDE":9, "BURGLARY":3, "WEAPONS_VIOLATION":24, "ASSAULT":1, "MOTOR_VEHICLE_THEFT":14, "ARSON":1, "STALKING":0, "INTERFERENCE_WITH_PUBLIC_OFFICER":10 } }, { "name":"time", "type":"nc_dim_time_2", "valnames":{  } }, { "name":"count", "type":"nc_var_uint_4", "valnames":{  } } ], "metadata":[ { "key":"tbin", "value":"2014-01-01_00:00:00_3600s" }, { "key":"location__origin", "value":"degrees_mercator_quadtree25" }, { "key":"name", "value":"xad" } ] }`),
+		[]byte(`{ "fields":[ { "name":"location", "type":"nc_dim_quadtree_25", "valnames":{  } }, { "name":"crime", "type":"nc_dim_cat_1", "valnames":{ "CRIM_SEXUAL_ASSAULT":12, "OFFENSE_INVOLVING_CHILDREN":32, "CRIMINAL_TRESPASS":10, "SEX_OFFENSE":21, "INTIMIDATION":21, "KIDNAPPING":24, "PROSTITUTION":18, "PUBLIC_PEACE_VIOLATION":19, "ROBBERY":20, "HOMICIDE":9, "BURGLARY":3, "WEAPONS_VIOLATION":48, "ASSAULT":2, "MOTOR_VEHICLE_THEFT":28, "GAMBLING":8, "OTHER_OFFENSE":17, "DECEPTIVE_PRACTICE":7, "NARCOTICS":15, "CRIMINAL_DAMAGE":4, "LIQUOR_LAW_VIOLATION":13, "BATTERY":2, "THEFT":23, "ARSON":1, "STALKING":22, "INTERFERENCE_WITH_PUBLIC_OFFICER":10 } }, { "name":"time", "type":"nc_dim_time_2", "valnames":{  } }, { "name":"count", "type":"nc_var_uint_4", "valnames":{  } } ], "metadata":[ { "key":"tbin", "value":"2014-01-01_00:00:00_3600s" }, { "key":"location__origin", "value":"degrees_mercator_quadtree25" }, { "key":"name", "value":"xac" } ] }`),
+	},
 }
 
 func (s ByKey) Len() int           { return len(s) }
@@ -100,9 +94,14 @@ func childPrepare(children []Child) {
 
 func TestMergeNormal(t *testing.T) {
 	for _, e := range mergeNormal {
-		dest := mustUnmarshalSlice(t, e.dest)
-		merge(dest, mustUnmarshalSlice(t, e.src))
-		ans := mustMarshalNanocubeResponse(t, dest)
+		dest, src := new(NanocubeResponse), new(NanocubeResponse)
+
+		dest.Unmarshal(e.dest)
+		src.Unmarshal(e.src)
+		dest.Merge(src)
+
+		ncrPrepare(dest)
+		ans, _ := dest.Marshal()
 		if !reflect.DeepEqual(ans, e.expected) {
 			t.Fatalf("%v was not equal to %v", string(ans), string(e.expected))
 		}
@@ -111,11 +110,14 @@ func TestMergeNormal(t *testing.T) {
 
 func TestMergeWithPath(t *testing.T) {
 	for _, e := range mergeWithPath {
-		dest := mustUnmarshalSlice(t, e.dest)
-		merge(dest, mustUnmarshalSlice(t, e.src))
+		dest, src := new(NanocubeResponse), new(NanocubeResponse)
+
+		dest.Unmarshal(e.dest)
+		src.Unmarshal(e.src)
+		dest.Merge(src)
 
 		ncrPrepare(dest)
-		ans := mustMarshalNanocubeResponse(t, dest)
+		ans, _ := dest.Marshal()
 		if !reflect.DeepEqual(ans, e.expected) {
 			t.Fatalf("%v was not equal to %v", string(ans), string(e.expected))
 		}
@@ -124,13 +126,34 @@ func TestMergeWithPath(t *testing.T) {
 
 func TestMergeWithXY(t *testing.T) {
 	for _, e := range mergeWithXY {
-		dest := mustUnmarshalSlice(t, e.dest)
-		merge(dest, mustUnmarshalSlice(t, e.src))
+		dest, src := new(NanocubeResponse), new(NanocubeResponse)
+
+		dest.Unmarshal(e.dest)
+		src.Unmarshal(e.src)
+		dest.Merge(src)
 
 		ncrPrepare(dest)
-		ans := mustMarshalNanocubeResponse(t, dest)
+		ans, _ := dest.Marshal()
 		if !reflect.DeepEqual(ans, e.expected) {
 			t.Fatalf("%v was not equal to %v", string(ans), string(e.expected))
+		}
+	}
+}
+
+func TestMergeSchema(t *testing.T) {
+	for _, e := range mergeSchema {
+		dest, src := new(SchemaResponse), new(SchemaResponse)
+		expected := new(SchemaResponse)
+
+		dest.Unmarshal(e.dest)
+		src.Unmarshal(e.src)
+
+		// We unmarshal expected so that map equality is not order dependent.
+		expected.Unmarshal(e.expected)
+
+		dest.Merge(src)
+		if !reflect.DeepEqual(*dest, *expected) {
+			t.Fatalf("%v was not equal to %v", *dest, *expected)
 		}
 	}
 }
