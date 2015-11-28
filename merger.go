@@ -78,8 +78,12 @@ func mergeNanocubeResponse(dest, src *NanocubeResponse) {
 	}
 
 	if dest.Root.Val != nil {
-		*(dest.Root.Val) += *(src.Root.Val)
+		if src.Root.Val != nil {
+			*(dest.Root.Val) += *(src.Root.Val)
+		}
 		return
+	} else if src.Root.Val != nil {
+		dest.Root.Val = src.Root.Val
 	}
 
 	dest.Root.Children = mergeChildren(dest.Root.Children, src.Root.Children)
