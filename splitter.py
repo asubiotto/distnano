@@ -1,4 +1,9 @@
-import sys, os, argparse
+import sys, os, argparse, concurrent.futures, executor, multiprocessing
+
+ports = []
+numclusters = 0
+filename = sep = timecol = latcol = loncol = catcol = ''
+
 
 #parses and returns arguments
 def getArgs():
@@ -54,30 +59,33 @@ def get_open_port():
         s.close()
         return port
 
-
-#hostdmp convers the split csv files to dmp files, hosts them on ports 29512 and above, and removes the initial split .csv files
-def hostdmp(filename, numclusters):
-	ports = []
-	fn = filename.split('.csv')[0]+'_split'
-	for i in range(numclusters):
+#hostdmp convers the split csv files to dmp files, hosts the nanocube, and deletes the original split .csv file
+def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
+	try:
 		fileNum = i + 1
 		port = get_open_port()
 		ports.append(port)
-		dmp_command = "nanocube-binning-csv --sep=',' --timecol='time' --latcol='Latitude' --loncol='Longitude' \
-				--catcol='crime' " + fn + str(fileNum) + '.csv > '\
+		fn = filename.split('.csv')[0]+'_split'
+		dmp_command = "nanocube-binning-csv --sep='"+sep+"' --timecol='"+timecol+"' --latcol='"+latcol+"' --loncol='"+loncol+"' \
+				--catcol='"+catcol+"' " + fn + str(fileNum) + '.csv > '\
 				 + fn + str(fileNum) + '.dmp'
 		os.system(dmp_command)
 		host_command = 'cat ' + fn + str(fileNum) + '.dmp | nanocube-leaf -q ' + str(port) + ' -f 10000 &'
 		os.system(host_command)
 		rm_command = 'rm ' + fn + str(fileNum) + '.csv'
 		os.system(rm_command)
+	except:
+		print('error with port')
+	
 
 
 def main(argv):
-	numclusters, filename, sep, timecol, latcol, loncol, catcol = getArgs()
-	print(numclusters, filename, sep, timecol, latcol, loncol, catcol)
+	(numclusters, filename, sep, timecol, latcol, loncol, catcol) = getArgs()
 	splitcsv(filename, numclusters)
-	hostdmp(filename, numclusters)
+	executor = concurrent.futures.ThreadPoolExecutor(multiprocessing.cpu_count())
+	futures = [executor.submit(hostdmp, filename, sep, timecol, latcol, loncol, catcol, i) for i in range(numclusters)]
+	concurrent.futures.wait(futures)
+	print("The ports used were " + str(ports))
 
 
 if __name__=='__main__':
