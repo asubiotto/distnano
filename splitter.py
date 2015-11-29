@@ -87,8 +87,8 @@ def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
 		os.system(dmp_command)
 		host_command = 'cat ' + fn + str(fileNum) + '.dmp | nanocube-leaf -q ' + str(port) + ' -f 10000 &'
 		os.system(host_command)
-		#rm_command = 'rm ' + fn + str(fileNum) + '.csv'
-		#os.system(rm_command)
+		rm_command = 'rm ' + fn + str(fileNum) + '.csv'
+		os.system(rm_command)
 	except:
 		print('error with port')
 	
@@ -100,7 +100,11 @@ def main(argv):
 	executor = concurrent.futures.ThreadPoolExecutor(multiprocessing.cpu_count())
 	futures = [executor.submit(hostdmp, filename, sep, timecol, latcol, loncol, catcol, i) for i in range(numclusters)]
 	concurrent.futures.wait(futures)
-	print("The ports used were " + str(ports))
+	dist_call = "go run cmd/cli/distnano.go "
+	for port in ports:
+		dist_call += "-a http://localhost:" + str(port) + " "
+	#now run distnano.go using the ports as arguments
+	os.system(dist_call)
 
 
 if __name__=='__main__':
