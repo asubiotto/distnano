@@ -37,9 +37,8 @@ def splitcsv(filename, numclusters):
 		else:
 			fileNum = min((count-1)/linesPerFile + 1, numclusters)
 			if (fileNum != firstNum):
-				f = open(fn + str(fileNum) + '.csv', 'w')
+				f = open(fn + str(fileNum) + '.csv', 'w+')
 				f.write(firstLine)
-				f = open(fn + str(fileNum) + '.csv', 'a')
 				firstNum = fileNum
 			f.write(line)
 		count += 1
