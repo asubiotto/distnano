@@ -1,8 +1,7 @@
-import sys, os, argparse, concurrent.futures, executor, multiprocessing
+import sys, os, argparse, concurrent.futures, multiprocessing
+from datetime import datetime
 
 ports = []
-numclusters = 0
-filename = sep = timecol = latcol = loncol = catcol = ''
 
 
 #parses and returns arguments
@@ -30,16 +29,29 @@ def getArgs():
 
 #splitcsv takes a csv filename in the $NANOCUBE_SRC/data and splits it into 
 #numclusters csv files, each with the same header line
-def splitcsv(filename, numclusters):
+def splitcsv(filename, numclusters, sep, timecol):
 	numLines = sum(1 for line in open(filename))
 	linesPerFile = numLines / numclusters
 	count = 0
 	firstNum = 0
+	mindt = datetime.max
+	maxdt = datetime.min
 	fn = filename.split('.csv')[0]+'_split'
 	for line in open(filename, 'r'):
 		if (count == 0):
 			firstLine = line
+			minLine = line
+			maxLine = line
+			timecol_index = firstLine.split(sep).index(timecol)
 		else:
+			t = line.split(sep)[timecol_index]
+			dt = datetime.strptime(t, "%m/%d/%Y %I:%M:%S %p")
+			if (dt < mindt):
+				mindt = dt
+				minLine = line
+			if (dt > maxdt):
+				maxdt = dt
+				maxLine = line
 			fileNum = min((count-1)/linesPerFile + 1, numclusters)
 			if (fileNum != firstNum):
 				f = open(fn + str(fileNum) + '.csv', 'w+')
@@ -47,7 +59,10 @@ def splitcsv(filename, numclusters):
 				firstNum = fileNum
 			f.write(line)
 		count += 1
-	print(count)
+	for i in range(fileNum):
+		f = open(fn + str(i + 1) + '.csv', 'a')
+		f.write(minLine)
+		f.write(maxLine)
 
 #returns a random open port
 def get_open_port():
@@ -72,8 +87,8 @@ def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
 		os.system(dmp_command)
 		host_command = 'cat ' + fn + str(fileNum) + '.dmp | nanocube-leaf -q ' + str(port) + ' -f 10000 &'
 		os.system(host_command)
-		rm_command = 'rm ' + fn + str(fileNum) + '.csv'
-		os.system(rm_command)
+		#rm_command = 'rm ' + fn + str(fileNum) + '.csv'
+		#os.system(rm_command)
 	except:
 		print('error with port')
 	
@@ -81,7 +96,7 @@ def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
 
 def main(argv):
 	(numclusters, filename, sep, timecol, latcol, loncol, catcol) = getArgs()
-	splitcsv(filename, numclusters)
+	splitcsv(filename, numclusters, sep, timecol)
 	executor = concurrent.futures.ThreadPoolExecutor(multiprocessing.cpu_count())
 	futures = [executor.submit(hostdmp, filename, sep, timecol, latcol, loncol, catcol, i) for i in range(numclusters)]
 	concurrent.futures.wait(futures)
