@@ -65,8 +65,8 @@ def hostdmp(filename, numclusters):
 		port = get_open_port()
 		ports.append(port)
 		dmp_command = "nanocube-binning-csv --sep=',' --timecol='time' --latcol='Latitude' --loncol='Longitude' \
-				--catcol='crime' " + filename.split('.csv')[0]+'_split' + str(fileNum) + '.csv > '\
-				 + filename.split('.csv')[0]+'_split' + str(fileNum) + '.dmp'
+				--catcol='crime' " + fn + str(fileNum) + '.csv > '\
+				 + fn + str(fileNum) + '.dmp'
 		os.system(dmp_command)
 		host_command = 'cat ' + fn + str(fileNum) + '.dmp | nanocube-leaf -q ' + str(port) + ' -f 10000 &'
 		os.system(host_command)
