@@ -22,6 +22,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// Our actual response to the request.
 	var response JSONResponse
 
+	// This global error variable will indicate whether our goroutines
+	// encountered any errors.
+	var glerr error
+	var glerrMtx = &sync.Mutex{}
+
 	// Mutex to protect concurrent modification of response and WaitGroup to
 	// wait for all responses.
 	var mtx = &sync.Mutex{}
@@ -39,7 +44,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			rawResponse, err := http.Get(url)
 			if err != nil {
-				log.Fatal("Cannot continue, error getting ", url)
+				glerrMtx.Lock()
+				defer glerrMtx.Unlock()
+				glerr = err
+				return
 			}
 
 			// Read the response and unmarshal into a NanocubeResponse object.
@@ -55,7 +63,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			err = partitionResponse.Unmarshal(content)
 			if err != nil {
-				log.Fatal(err)
+				glerrMtx.Lock()
+				defer glerrMtx.Unlock()
+				glerr = err
+				return
 			}
 
 			// Update our global response.
@@ -77,7 +88,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wg.Wait()
-	if response == nil {
+	if response == nil || glerr != nil {
 		w.Write([]byte("error"))
 		return
 	}
