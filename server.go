@@ -5,17 +5,27 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+// addrs is a string slice that will hold all the addrs of our child nodes.
+var addrs []string
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	log.Println("Handling request for url path: ", r.URL.Path)
+	log.Println("Handling request for url path:", r.URL.Path)
 
 	// Our actual response to the request.
 	var response JSONResponse
+
+	// This global error variable will indicate whether our goroutines
+	// encountered any errors.
+	var glerr error
+	var glerrMtx = &sync.Mutex{}
 
 	// Mutex to protect concurrent modification of response and WaitGroup to
 	// wait for all responses.
@@ -24,22 +34,20 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	// Note what kind of request this is.
 	schemaRequest := strings.HasPrefix(r.URL.Path, "/schema")
-	wg.Add(5)
+	wg.Add(len(addrs))
 	// Send off the request to each server that we know exists.
-	for i := 1; i <= 5; i++ {
-		go func(counter int) {
+	for _, e := range addrs {
+		go func(addr string) {
 			defer wg.Done()
 
-			rawResponse, err := http.Get(
-				fmt.Sprintf("http://localhost:900%v%v", counter, r.URL.Path),
-			)
+			url := fmt.Sprintf("%v%v", addr, r.URL.Path)
 
+			rawResponse, err := http.Get(url)
 			if err != nil {
-				log.Fatalf(
-					"Cannot continue, error getting %v from node %v\n",
-					r.URL.Path,
-					i,
-				)
+				glerrMtx.Lock()
+				defer glerrMtx.Unlock()
+				glerr = err
+				return
 			}
 
 			// Read the response and unmarshal into a NanocubeResponse object.
@@ -55,7 +63,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			err = partitionResponse.Unmarshal(content)
 			if err != nil {
-				log.Fatal(err)
+				glerrMtx.Lock()
+				defer glerrMtx.Unlock()
+				glerr = err
+				return
 			}
 
 			// Update our global response.
@@ -73,10 +84,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			// Otherwise we merge with what we have already.
 			response.Merge(partitionResponse)
-		}(i)
+		}(e)
 	}
 
 	wg.Wait()
+	if response == nil || glerr != nil {
+		w.Write([]byte("error"))
+		return
+	}
+
 	b, err := response.Marshal()
 	if err != nil {
 		log.Fatal(err)
@@ -85,7 +101,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
-func Run() {
+func Run(port int, addresses []string) {
+	addrs = addresses
 	http.HandleFunc("/", handler)
-	log.Fatal(http.ListenAndServe(":29512", nil))
+	log.Println("Starting server on port", port)
+	go func() {
+		<-time.After(2 * time.Second)
+		log.Println("Server started")
+	}()
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(port), nil))
 }
