@@ -34,24 +34,11 @@ def splitcsv(filename, numclusters, sep, timecol):
 	linesPerFile = numLines / numclusters
 	count = 0
 	firstNum = 0
-	mindt = datetime.max
-	maxdt = datetime.min
 	fn = filename.split('.csv')[0]+'_split'
 	for line in open(filename, 'r'):
 		if (count == 0):
 			firstLine = line
-			minLine = line
-			maxLine = line
-			timecol_index = firstLine.split(sep).index(timecol)
 		else:
-			t = line.split(sep)[timecol_index]
-			dt = datetime.strptime(t, "%m/%d/%Y %I:%M:%S %p")
-			if (dt < mindt):
-				mindt = dt
-				minLine = line
-			if (dt > maxdt):
-				maxdt = dt
-				maxLine = line
 			fileNum = min((count-1)/linesPerFile + 1, numclusters)
 			if (fileNum != firstNum):
 				f = open(fn + str(fileNum) + '.csv', 'w+')
@@ -59,10 +46,6 @@ def splitcsv(filename, numclusters, sep, timecol):
 				firstNum = fileNum
 			f.write(line)
 		count += 1
-	for i in range(fileNum):
-		f = open(fn + str(i + 1) + '.csv', 'a')
-		f.write(minLine)
-		f.write(maxLine)
 
 #returns a random open port
 def get_open_port():
@@ -81,11 +64,11 @@ def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
 		port = get_open_port()
 		ports.append(port)
 		fn = filename.split('.csv')[0]+'_split'
-		dmp_command = "nanocube-binning-csv --sep='"+sep+"' --timecol='"+timecol+"' --latcol='"+latcol+"' --loncol='"+loncol+"' \
+		dmp_command = "$NANOCUBE_SRC/bin/nanocube-binning-csv --sep='"+sep+"' --timecol='"+timecol+"' --latcol='"+latcol+"' --loncol='"+loncol+"' \
 				--catcol='"+catcol+"' " + fn + str(fileNum) + '.csv > '\
 				 + fn + str(fileNum) + '.dmp'
 		os.system(dmp_command)
-		host_command = 'cat ' + fn + str(fileNum) + '.dmp | nanocube-leaf -q ' + str(port) + ' -f 10000 &'
+		host_command = 'cat ' + fn + str(fileNum) + '.dmp | $NANOCUBE_SRC/bin/nanocube-leaf -q ' + str(port) + ' -f 10000 &'
 		os.system(host_command)
 		rm_command = 'rm ' + fn + str(fileNum) + '.csv'
 		os.system(rm_command)
