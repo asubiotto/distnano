@@ -5,6 +5,17 @@ import concurrent.futures
 import multiprocessing
 from datetime import datetime
 
+"""
+This splitter.py script is a helper script to spawn split a csv file into n
+partitions, spawn n servers each serving one partition, and run our master
+server on a specified port. Example usage:
+
+    python3 splitter.py -n=5 -f='./nanocube/data/crime50k.csv' \
+            -s=',' -t='time' -a='Latitude' -o='Longitude' -c='crime' -p=29512
+
+Will split the csv file into 5 parts and run our master server on port 29512.
+"""
+
 ports = []
 
 
@@ -30,10 +41,17 @@ def getArgs():
         '-o', '--lon', type=str, help='longitude col name', required=True)
     parser.add_argument(
         '-c', '--cat', type=str, help='category col name', required=True)
+    parser.add_argument(
+        '-p',
+        '--port',
+        type=int,
+        help='master server port',
+        required=False,
+        default=29512)
     # Array for all arguments passed to script
     args = parser.parse_args()
     # Return all arg values
-    return args.numclusters, args.filename, args.sep, args.time, args.lat, args.lon, args.cat
+    return args.numclusters, args.filename, args.sep, args.time, args.lat, args.lon, args.cat, args.port
 
 # splitcsv takes a csv filename in the $NANOCUBE_SRC/data and splits it into
 # numclusters csv files, each with the same header line
@@ -99,7 +117,7 @@ def main(argv):
         print("Setting NANOCUBE_BIN to " + nanobin)
         os.environ['NANOCUBE_BIN'] = nanobin
 
-    (numclusters, filename, sep, timecol, latcol, loncol, catcol) = getArgs()
+    (numclusters, filename, sep, timecol, latcol, loncol, catcol, master_port) = getArgs()
     splitcsv(filename, numclusters, sep, timecol)
     executor = concurrent.futures.ThreadPoolExecutor(
         multiprocessing.cpu_count())
@@ -114,7 +132,7 @@ def main(argv):
             catcol,
             i) for i in range(numclusters)]
     concurrent.futures.wait(futures)
-    dist_call = "go run cmd/cli/distnano.go "
+    dist_call = "go run cmd/cli/distnano.go -p " + str(master_port) + " "
     for port in ports:
         dist_call += "-a http://localhost:" + str(port) + " "
     # now run distnano.go using the ports as arguments
