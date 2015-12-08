@@ -91,12 +91,12 @@ def hostdmp(filename, sep, timecol, latcol, loncol, catcol, i):
         port = get_open_port()
         ports.append(port)
         fn = filename.split('.csv')[0] + '_split'
-        dmp_command = "$NANOCUBE_SRC/bin/nanocube-binning-csv --sep='" + sep + "' --timecol='" + timecol + "' --latcol='" + latcol + "' --loncol='" + loncol + "' \
+        dmp_command = "$NANOCUBE_BIN/nanocube-binning-csv --sep='" + sep + "' --timecol='" + timecol + "' --latcol='" + latcol + "' --loncol='" + loncol + "' \
 				--catcol='" + catcol + "' " + fn + str(fileNum) + '.csv > '\
             + fn + str(fileNum) + '.dmp'
         os.system(dmp_command)
         host_command = 'cat ' + fn + \
-            str(fileNum) + '.dmp | $NANOCUBE_SRC/bin/nanocube-leaf -q ' + str(port) + ' -f 10000 &'
+            str(fileNum) + '.dmp | $NANOCUBE_BIN/nanocube-leaf -q ' + str(port) + ' -f 10000 &'
         os.system(host_command)
         rm_command = 'rm ' + fn + str(fileNum) + '.csv'
         os.system(rm_command)
