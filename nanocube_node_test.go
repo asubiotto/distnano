@@ -1,10 +1,6 @@
 package distnano
 
-import (
-	"fmt"
-	"net/http"
-	"testing"
-)
+import "testing"
 
 // TestNanocubeNodeCrimeConstruction only runs if there are 5 NanocubeNodes
 // running on http://localhost:900x where x \in {0, 1, 2, 3, 4}
@@ -19,8 +15,7 @@ func TestNanocubeNodeCrimeConstruction(t *testing.T) {
 
 	// Do a count request to check that the servers are up and responding.
 	for _, addr := range addrs {
-		url := fmt.Sprintf("%v%v", addr, "/count")
-		_, err := http.Get(url)
+		_, err := (&NanocubeNode{addr: addr}).Query("/schema")
 		if err != nil {
 			return
 		}
@@ -40,4 +35,23 @@ func TestNanocubeNodeCrimeConstruction(t *testing.T) {
 	}
 
 	// TODO(asubiotto): Add a check for the relativeBin
+}
+
+func TestAbsoluteToRelativeTimeQuery(t *testing.T) {
+	node := &NanocubeNode{relativeBin: 444}
+	result, _ := node.mustAbsToRelTimeQuery(
+		"/count.r(\"time\",mt_interval_sequence(480,24,10))",
+	)
+
+	if result != "/count.r(\"time\",mt_interval_sequence(36,24,10))" {
+		t.Fatal("Unexcepted result", result)
+	}
+
+	result, _ = node.mustAbsToRelTimeQuery(
+		"/count.r(\"time\",interval(480,720))",
+	)
+
+	if result != "/count.r(\"time\",interval(36,276))" {
+		t.Fatal("Unexcepted result", result)
+	}
 }
