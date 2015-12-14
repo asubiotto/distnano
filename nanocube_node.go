@@ -1,6 +1,7 @@
 package distnano
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -51,7 +52,11 @@ func nanocubeNodesFromAddrs(addrs []string) ([]*NanocubeNode, error) {
 
 		for _, md := range response.Metadata {
 			if md.Key == "tbin" {
-				tbins[i] = *newTBin(md.Value)
+				tbin := newTBin(md.Value)
+				if tbin == nil {
+					return nil, errors.New("error creating time bin")
+				}
+				tbins[i] = *tbin
 			}
 		}
 	}
@@ -88,7 +93,7 @@ func newTBin(tbstring string) *TBin {
 
 	t, err := time.Parse(
 		layout,
-		fmt.Sprintf("%v%v", splitString[0], splitString[1]),
+		fmt.Sprintf("%v_%v", splitString[0], splitString[1]),
 	)
 
 	if err != nil {
