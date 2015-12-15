@@ -1,6 +1,75 @@
 package distnano
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+var absToRel = []struct {
+	query        string
+	result       string
+	outsideRange bool
+	spt          *SpecialTimeQuery
+	relativeBin  int
+}{
+	// Tests a query that falls fully into a NanocubeNode's range.
+	{
+		"/count.r(\"time\",mt_interval_sequence(480,24,10))",
+		"/count.r(\"time\",mt_interval_sequence(36,24,10))",
+		false,
+		nil,
+		444,
+	},
+	// Tests an interval query (simpler of the two time queries).
+	{
+		"/count.r(\"time\",interval(480,720))",
+		"/count.r(\"time\",interval(36,276))",
+		false,
+		nil,
+		444,
+	},
+	// Tests a query that falls only partially into a NanocubeNode's range and
+	// would need to be readjusted according to bucketOffset.
+	{
+		"/count.r(\"time\",mt_interval_sequence(408,24,13))",
+		"",
+		false,
+		&SpecialTimeQuery{
+			queryOne:     "/count.r(\"time\",mt_interval_sequence(0,12,1))",
+			queryTwo:     "/count.r(\"time\",mt_interval_sequence(12,24,11))",
+			bucketOffset: 1,
+			node:         nil,
+		},
+		444,
+	},
+	// Tests a time query over the whole dataset for a variety of relativeBins.
+	{
+		"/count.r(\"time\",mt_interval_sequence(0,524289,8192))",
+		"/count.r(\"time\",mt_interval_sequence(0,524289,8192))",
+		false,
+		nil,
+		0,
+	},
+	{
+		"/count.r(\"time\",mt_interval_sequence(0,524289,8192))",
+		"",
+		false,
+		&SpecialTimeQuery{
+			queryOne:     "/count.r(\"time\",mt_interval_sequence(0,523545,1))",
+			queryTwo:     "/count.r(\"time\",mt_interval_sequence(523545,524289,8191))",
+			bucketOffset: 0,
+			node:         nil,
+		},
+		744,
+	},
+	{
+		"/count.r(\"time\",mt_interval_sequence(480,24,10))",
+		"/count.r(\"time\",mt_interval_sequence(0,24,-32))",
+		true,
+		nil,
+		1488,
+	},
+}
 
 // TestNanocubeNodeCrimeConstruction only runs if there are 5 NanocubeNodes
 // running on http://localhost:900x where x \in {0, 1, 2, 3, 4}
@@ -38,30 +107,35 @@ func TestNanocubeNodeCrimeConstruction(t *testing.T) {
 }
 
 func TestAbsoluteToRelativeTimeQuery(t *testing.T) {
-	node := &NanocubeNode{relativeBin: 444}
-	result, _, _ := node.mustAbsToRelTimeQuery(
-		"/count.r(\"time\",mt_interval_sequence(480,24,10))",
-	)
+	for _, e := range absToRel {
+		node := &NanocubeNode{relativeBin: e.relativeBin}
+		result, outsideRange, spTimeQuery := node.mustAbsToRelTimeQuery(e.query)
 
-	if result != "/count.r(\"time\",mt_interval_sequence(36,24,10))" {
-		t.Fatal("Unexcepted result", result)
-	}
+		if spTimeQuery != nil {
+			spTimeQuery.node = nil
+		}
 
-	result, _, _ = node.mustAbsToRelTimeQuery(
-		"/count.r(\"time\",interval(480,720))",
-	)
-
-	if result != "/count.r(\"time\",interval(36,276))" {
-		t.Fatal("Unexcepted result", result)
-	}
-
-	result, _, bucketOffset := node.mustAbsToRelTimeQuery(
-		"/count.r(\"time\",mt_interval_sequence(408,24,13))",
-	)
-
-	if result != "/count.r(\"time\",mt_interval_sequence(0,24,10))" {
-		t.Fatal("Unexpected result", result)
-	} else if bucketOffset != 3 {
-		t.Fatal("Unexpected bucket offset", bucketOffset)
+		if result != e.result {
+			t.Fatalf(
+				"Expected %v, got %v for query %v\n",
+				e.result,
+				result,
+				e,
+			)
+		} else if outsideRange != e.outsideRange {
+			t.Fatalf(
+				"Expected %v, got %v for query %v\n",
+				e.outsideRange,
+				outsideRange,
+				e,
+			)
+		} else if !reflect.DeepEqual(spTimeQuery, e.spt) {
+			t.Fatalf(
+				"Expected %v, got %v for query %v\n",
+				e.spt,
+				spTimeQuery,
+				e,
+			)
+		}
 	}
 }

@@ -26,6 +26,13 @@ type NanocubeNode struct {
 	relativeBin int
 }
 
+type SpecialTimeQuery struct {
+	queryOne     string
+	queryTwo     string
+	bucketOffset int
+	node         *NanocubeNode
+}
+
 func (t ByTime) Len() int           { return len(t) }
 func (t ByTime) Swap(i, j int)      { t[i], t[j] = t[j], t[i] }
 func (t ByTime) Less(i, j int) bool { return t[i].startTime.Before(t[j].startTime) }
@@ -111,10 +118,81 @@ func newNanocubeNode(addr string, tBin *TBin) *NanocubeNode {
 	return nn
 }
 
-// Query queries the NanocubeNode by sending an HTTP GET request to the url
-// endpoint. Examples are: "/count", "/schema".
+// Query does some preprocessing of the url before querying the NanocubeNode.
 func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
+	var spTimeQuery *SpecialTimeQuery
+
+	// If this is a time query, we have to convert it from an absolute to a
+	// relative time.
+	if strings.Contains(url, "interval") {
+		var queryOutsideRange bool
+		url, queryOutsideRange, spTimeQuery = n.mustAbsToRelTimeQuery(url)
+		if queryOutsideRange {
+			return new(NanocubeResponse), nil
+		}
+	}
+
+	if spTimeQuery != nil {
+		return spTimeQuery.query()
+	}
+
+	return n.query(url)
+}
+
+// query queries both urls of SpecialTimeQuery and merges them together to
+// return one NanocubeResponse.
+func (s *SpecialTimeQuery) query() (*NanocubeResponse, error) {
+	// Query the second query first. This is the query that has the same
+	// resolution as the global query and fits nicely into the global buckets.
+	response, err := s.node.query(s.queryTwo)
+	if err != nil {
+		return nil, err
+	}
+
 	_ = "breakpoint"
+
+	responseTwo := response.(*NanocubeResponse)
+
+	// If our n.relativeBin is not divisible by the number of tbins in a global
+	// bucket.
+	if s.queryOne != "" {
+		response, err = s.node.query(s.queryOne)
+		if err != nil {
+			return nil, err
+		}
+
+		responseOne := response.(*NanocubeResponse)
+
+		// And now merge the responses: add everything in the queryOne bucket
+		// to the first bucket of queryTwo.
+		for _, child := range responseTwo.Root.Children {
+			// Shift over to make space for the "0" bucket.
+			child.Path[0] += 1
+		}
+
+		if len(responseOne.Root.Children) > 0 {
+			// Add the 0 bucket.
+			responseTwo.Root.Children = append(
+				responseTwo.Root.Children,
+				Child{
+					Path: []uint{0},
+					Val:  responseOne.Root.Children[0].Val,
+				},
+			)
+		}
+	}
+
+	// Adjust for bucket offset.
+	for _, child := range responseTwo.Root.Children {
+		child.Path[0] += uint(s.bucketOffset)
+	}
+
+	return responseTwo, nil
+}
+
+// query queries the NanocubeNode by sending an HTTP GET request to the url
+// endpoint. Examples are: "/count", "/schema".
+func (n *NanocubeNode) query(url string) (JSONResponse, error) {
 	// Note what kind of request this is.
 	schemaRequest := strings.HasPrefix(url, "/schema")
 	var response JSONResponse
@@ -122,18 +200,6 @@ func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
 		response = new(SchemaResponse)
 	} else {
 		response = new(NanocubeResponse)
-	}
-
-	var bucketOffset int
-
-	// If this is a time query, we have to convert it from an absolute to a
-	// relative time.
-	if strings.Contains(url, "interval") {
-		var queryOutsideRange bool
-		url, queryOutsideRange, bucketOffset = n.mustAbsToRelTimeQuery(url)
-		if queryOutsideRange {
-			return response, nil
-		}
 	}
 
 	rawResponse, err := http.Get(fmt.Sprintf("%v%v", n.addr, url))
@@ -149,30 +215,27 @@ func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
 		return nil, err
 	}
 
-	// Take care of the bucket offset in case this was an mt_interval_sequence
-	// query.
-	if bucketOffset > 0 {
-		for _, child := range response.(*NanocubeResponse).Root.Children {
-			child.Path[0] += uint(bucketOffset)
-		}
-	}
-
 	return response, nil
 }
 
 // absToRelTimeQuery converts a query from a distribution-agnostic client to
-// the a query that takes into account a NanocubeNode's relativeBin as well as
-// returning whether the query falls outside of NanocubeNode's range.
-// The last return variable is going to be a "bucket offset" which is a special
-// case for an mt_interval_sequence query. The result returned will assign a
-// value to each bucket but if a certain node only answers queries over a
-// certain number of buckets, their bucket id will not be equal to what the
-// absolute bucket id should be and bucket offset should be added to each
-// bucket id returned by an mt_interval_sequence query.
+// a query that takes into account a NanocubeNode's relativeBin.
+// The return values are:
+//
+// 	string: the relative query
+//	bool: whether the query lies outside the NanocubeNode's range
+//
+// The special time query is for queries where n.relativeBin falls into a
+// bucket. It will have queryOne set to what the query should be to query the
+// NanocubeNode until the start of the next bucket and then the query from the
+// start of that bucket until the end global bucket.
+//
+// With this information, the caller can reconstruct a global answer with
+// arbitrary relative offsets.
 func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (
 	string,
 	bool,
-	int,
+	*SpecialTimeQuery,
 ) {
 	timeQueries := []*regexp.Regexp{
 		regexp.MustCompile("mt_interval_sequence[(][0-9]*,[0-9]*,[0-9]*[)]"),
@@ -180,7 +243,6 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (
 	}
 
 	queryOutsideRange := true
-	bucketOffset := 0
 
 	relative := query
 	for i, timeQuery := range timeQueries {
@@ -191,22 +253,71 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (
 				abstbins := mustSplitAndGetInts(substr, "mt_interval_sequence")
 				reltbins := make([]int, len(abstbins), len(abstbins))
 
+				reltbins[1] = abstbins[1]
+
 				// Semantics are: first value is start time bin, second value
 				// is how many time bins are in a bucket, third value is how
 				// many buckets to get.
 				startOffset := abstbins[0] - n.relativeBin
 				endOffset := startOffset + (abstbins[1] * abstbins[2])
 
-				if startOffset > 0 {
+				if startOffset >= 0 {
 					reltbins[0] = startOffset
-				} else {
-					reltbins[0] = 0
+				} else if endOffset > 0 {
+					// Create a SpecialTimeQuery. First query goes to
+					spTimeQuery := new(SpecialTimeQuery)
+
+					numTBinsToStart := abstbins[1] -
+						((n.relativeBin - abstbins[0]) % abstbins[1])
+
+					if numTBinsToStart == abstbins[1] {
+						// Case where n.relativBin is divisible by abstbins[1].
+						numTBinsToStart = 0
+					}
+
+					// How many buckets are we going to miss?
+					bucketOffset := (n.relativeBin - abstbins[0]) / abstbins[1]
+
+					spTimeQuery.queryTwo = strings.Replace(
+						relative,
+						substr,
+						fmt.Sprintf(
+							"mt_interval_sequence(%v,%v,%v)",
+							// Start from the start of the next bucket.
+							strconv.Itoa(0+numTBinsToStart),
+							// And use the same bucket resolution.
+							strconv.Itoa(abstbins[1]),
+							// And subtract however many buckets we can't
+							// answer plus the one that will be answered by
+							// our first partial query.
+							strconv.Itoa(abstbins[2]-(bucketOffset+1)),
+						),
+						-1,
+					)
+
+					if numTBinsToStart > 0 {
+						spTimeQuery.queryOne = strings.Replace(
+							relative,
+							substr,
+							fmt.Sprintf(
+								"mt_interval_sequence(%v,%v,%v)",
+								// Start from the start of our NanocubeNode.
+								strconv.Itoa(0),
+								strconv.Itoa(numTBinsToStart),
+								// Get one multiple of what we have above.
+								strconv.Itoa(1),
+							),
+							-1,
+						)
+					}
+
+					spTimeQuery.bucketOffset = bucketOffset
+					spTimeQuery.node = n
+
+					return "", false, spTimeQuery
 				}
 
-				reltbins[1] = abstbins[1]
-
-				reltbins[2] = int((endOffset - reltbins[0]) / abstbins[1])
-				bucketOffset = abstbins[2] - reltbins[2]
+				reltbins[2] = int((endOffset - reltbins[0]) / reltbins[1])
 
 				queryOutsideRange = endOffset < 0
 
@@ -254,7 +365,7 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (
 		}
 	}
 
-	return relative, queryOutsideRange, bucketOffset
+	return relative, queryOutsideRange, nil
 }
 
 func mustSliceAtoi(slice []string) []int {
