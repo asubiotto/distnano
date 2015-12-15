@@ -1,18 +1,14 @@
 package distnano
 
 import (
-	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-// addrs is a string slice that will hold all the addrs of our child nodes.
-var addrs []string
+var nodes []*NanocubeNode
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -32,36 +28,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	var mtx = &sync.Mutex{}
 	var wg = &sync.WaitGroup{}
 
-	// Note what kind of request this is.
-	schemaRequest := strings.HasPrefix(r.URL.Path, "/schema")
-	wg.Add(len(addrs))
+	wg.Add(len(nodes))
 	// Send off the request to each server that we know exists.
-	for _, e := range addrs {
-		go func(addr string) {
+	for _, v := range nodes {
+		go func(node *NanocubeNode) {
 			defer wg.Done()
 
-			url := fmt.Sprintf("%v%v", addr, r.URL.Path)
-
-			rawResponse, err := http.Get(url)
-			if err != nil {
-				glerrMtx.Lock()
-				defer glerrMtx.Unlock()
-				glerr = err
-				return
-			}
-
-			// Read the response and unmarshal into a NanocubeResponse object.
-			defer rawResponse.Body.Close()
-			content, _ := ioutil.ReadAll(rawResponse.Body)
-
-			var partitionResponse JSONResponse
-			if schemaRequest {
-				partitionResponse = new(SchemaResponse)
-			} else {
-				partitionResponse = new(NanocubeResponse)
-			}
-
-			err = partitionResponse.Unmarshal(content)
+			partitionResponse, err := node.Query(r.URL.Path)
 			if err != nil {
 				glerrMtx.Lock()
 				defer glerrMtx.Unlock()
@@ -84,7 +57,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			// Otherwise we merge with what we have already.
 			response.Merge(partitionResponse)
-		}(e)
+		}(v)
 	}
 
 	wg.Wait()
@@ -102,7 +75,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func Run(port int, addresses []string) {
-	addrs = addresses
+	var err error
+	nodes, err = nanocubeNodesFromAddrs(addresses)
+	if err != nil {
+		log.Fatalf(
+			"Could not create nanocube nodes from provided addresses: %v\n",
+			addresses,
+		)
+	}
+
 	http.HandleFunc("/", handler)
 	log.Println("Starting server on port", port)
 	go func() {

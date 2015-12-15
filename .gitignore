@@ -26,3 +26,5 @@ _testmain.go
 # Project-specific
 nanocube
 nanocube.log
+
+.DS_Store
