@@ -39,7 +39,7 @@ func TestNanocubeNodeCrimeConstruction(t *testing.T) {
 
 func TestAbsoluteToRelativeTimeQuery(t *testing.T) {
 	node := &NanocubeNode{relativeBin: 444}
-	result, _ := node.mustAbsToRelTimeQuery(
+	result, _, _ := node.mustAbsToRelTimeQuery(
 		"/count.r(\"time\",mt_interval_sequence(480,24,10))",
 	)
 
@@ -47,11 +47,21 @@ func TestAbsoluteToRelativeTimeQuery(t *testing.T) {
 		t.Fatal("Unexcepted result", result)
 	}
 
-	result, _ = node.mustAbsToRelTimeQuery(
+	result, _, _ = node.mustAbsToRelTimeQuery(
 		"/count.r(\"time\",interval(480,720))",
 	)
 
 	if result != "/count.r(\"time\",interval(36,276))" {
 		t.Fatal("Unexcepted result", result)
+	}
+
+	result, _, bucketOffset := node.mustAbsToRelTimeQuery(
+		"/count.r(\"time\",mt_interval_sequence(408,24,13))",
+	)
+
+	if result != "/count.r(\"time\",mt_interval_sequence(0,24,10))" {
+		t.Fatal("Unexpected result", result)
+	} else if bucketOffset != 3 {
+		t.Fatal("Unexpected bucket offset", bucketOffset)
 	}
 }

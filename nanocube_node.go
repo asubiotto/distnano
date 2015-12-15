@@ -114,6 +114,7 @@ func newNanocubeNode(addr string, tBin *TBin) *NanocubeNode {
 // Query queries the NanocubeNode by sending an HTTP GET request to the url
 // endpoint. Examples are: "/count", "/schema".
 func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
+	_ = "breakpoint"
 	// Note what kind of request this is.
 	schemaRequest := strings.HasPrefix(url, "/schema")
 	var response JSONResponse
@@ -123,11 +124,13 @@ func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
 		response = new(NanocubeResponse)
 	}
 
+	var bucketOffset int
+
 	// If this is a time query, we have to convert it from an absolute to a
 	// relative time.
 	if strings.Contains(url, "interval") {
 		var queryOutsideRange bool
-		url, queryOutsideRange = n.mustAbsToRelTimeQuery(url)
+		url, queryOutsideRange, bucketOffset = n.mustAbsToRelTimeQuery(url)
 		if queryOutsideRange {
 			return response, nil
 		}
@@ -146,26 +149,44 @@ func (n *NanocubeNode) Query(url string) (JSONResponse, error) {
 		return nil, err
 	}
 
+	// Take care of the bucket offset in case this was an mt_interval_sequence
+	// query.
+	if bucketOffset > 0 {
+		for _, child := range response.(*NanocubeResponse).Root.Children {
+			child.Path[0] += uint(bucketOffset)
+		}
+	}
+
 	return response, nil
 }
 
 // absToRelTimeQuery converts a query from a distribution-agnostic client to
 // the a query that takes into account a NanocubeNode's relativeBin as well as
-// returning whether the query falls outside of NanocubeNode's range,
-func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (string, bool) {
+// returning whether the query falls outside of NanocubeNode's range.
+// The last return variable is going to be a "bucket offset" which is a special
+// case for an mt_interval_sequence query. The result returned will assign a
+// value to each bucket but if a certain node only answers queries over a
+// certain number of buckets, their bucket id will not be equal to what the
+// absolute bucket id should be and bucket offset should be added to each
+// bucket id returned by an mt_interval_sequence query.
+func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (
+	string,
+	bool,
+	int,
+) {
 	timeQueries := []*regexp.Regexp{
 		regexp.MustCompile("mt_interval_sequence[(][0-9]*,[0-9]*,[0-9]*[)]"),
 		regexp.MustCompile("interval[(][0-9]*,[0-9]*[)]"),
 	}
 
 	queryOutsideRange := true
+	bucketOffset := 0
 
 	relative := query
 	for i, timeQuery := range timeQueries {
 		for _, substr := range timeQuery.FindAllString(query, -1) {
 			switch i {
 			case 0:
-				_ = "breakpoint"
 				// mt_interval_sequence case.
 				abstbins := mustSplitAndGetInts(substr, "mt_interval_sequence")
 				reltbins := make([]int, len(abstbins), len(abstbins))
@@ -183,8 +204,11 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (string, bool) {
 				}
 
 				reltbins[1] = abstbins[1]
-				reltbins[2] = int((endOffset - reltbins[1]) / abstbins[1])
-				queryOutsideRange = endOffset > 0
+
+				reltbins[2] = int((endOffset - reltbins[0]) / abstbins[1])
+				bucketOffset = abstbins[2] - reltbins[2]
+
+				queryOutsideRange = endOffset < 0
 
 				relative = strings.Replace(
 					relative,
@@ -214,7 +238,7 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (string, bool) {
 				}
 
 				reltbins[1] = endOffset
-				queryOutsideRange = endOffset > 0
+				queryOutsideRange = endOffset < 0
 
 				relative = strings.Replace(
 					relative,
@@ -230,7 +254,7 @@ func (n *NanocubeNode) mustAbsToRelTimeQuery(query string) (string, bool) {
 		}
 	}
 
-	return relative, queryOutsideRange
+	return relative, queryOutsideRange, bucketOffset
 }
 
 func mustSliceAtoi(slice []string) []int {
