@@ -149,8 +149,6 @@ func (s *SpecialTimeQuery) query() (*NanocubeResponse, error) {
 		return nil, err
 	}
 
-	_ = "breakpoint"
-
 	responseTwo := response.(*NanocubeResponse)
 
 	// If our n.relativeBin is not divisible by the number of tbins in a global
@@ -163,14 +161,14 @@ func (s *SpecialTimeQuery) query() (*NanocubeResponse, error) {
 
 		responseOne := response.(*NanocubeResponse)
 
-		// And now merge the responses: add everything in the queryOne bucket
-		// to the first bucket of queryTwo.
-		for _, child := range responseTwo.Root.Children {
-			// Shift over to make space for the "0" bucket.
-			child.Path[0] += 1
-		}
-
 		if len(responseOne.Root.Children) > 0 {
+			// And now merge the responses: add everything in the queryOne
+			// bucket to the first bucket of queryTwo.
+			for _, child := range responseTwo.Root.Children {
+				// Shift over to make space for the "0" bucket.
+				child.Path[0] += 1
+			}
+
 			// Add the 0 bucket.
 			responseTwo.Root.Children = append(
 				responseTwo.Root.Children,

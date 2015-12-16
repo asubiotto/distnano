@@ -12,7 +12,6 @@ var nodes []*NanocubeNode
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-
 	log.Println("Handling request for url path:", r.URL.Path)
 
 	// Our actual response to the request.
